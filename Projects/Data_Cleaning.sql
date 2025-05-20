@@ -17,11 +17,13 @@ FROM layoffs_staging;
 
 -- Removing duplicates
 
+-- Check for potential duplicates based on key columns
 SELECT *,
 ROW_NUMBER() OVER(
 PARTITION BY company, industry, total_laid_off, percentage_laid_off, `date`) AS row_num
 FROM layoffs_staging;
 
+-- Identify true duplicates with a more complete key across more columns
 WITH duplicate_cte AS
 (
 SELECT *,
@@ -40,6 +42,7 @@ SELECT *
 FROM duplicate_cte
 WHERE company = 'Oda'
 
+-- Create a new staging table with a row_num column for easier duplicate management
 CREATE TABLE `layoffs_staging2` (
   `company` text,
   `location` text,
@@ -57,6 +60,7 @@ SELECT *
 FROM layoffs_staging2
 WHERE row_num > 1;
 
+-- Insert data into the new staging table with row_num
 INSERT INTO layoffs_staging2
 SELECT *,
 ROW_NUMBER() OVER(
@@ -65,6 +69,7 @@ total_laid_off, percentage_laid_off, `date`,
 stage, country, funds_raised_millions) AS row_num
 FROM layoffs_staging;
 
+-- Delete duplicate rows (keeping row_num = 1, removing > 1)
 DELETE
 FROM layoffs_staging2
 WHERE row_num > 1;
@@ -76,6 +81,7 @@ FROM layoffs_staging2;
 
 -- Standardizing data
 
+-- Trim leading/trailing spaces from the 'company' column
 SELECT company, TRIM(company)
 FROM layoffs_staging2;
 
@@ -83,6 +89,8 @@ UPDATE layoffs_staging2
 SET company = TRIM(company);
 
 
+-- Standardize similar values in the 'industry' column
+-- Example: Merge all variations of 'Crypto' into a single value
 SELECT DISTINCT industry
 FROM layoffs_staging2;
 
@@ -90,6 +98,7 @@ UPDATE layoffs_staging2
 SET industry = 'Crypto'
 WHERE industry LIKE 'Crypto%';
 
+-- Clean up country values, removing trailing periods
 SELECT DISTINCT country, TRIM(TRAILING '.' FROM country)
 FROM layoffs_staging2
 ORDER BY 1;
@@ -99,12 +108,14 @@ SET country = TRIM(TRAILING '.' FROM country)
 WHERE country LIKE 'United States%';
 
 
+-- Convert the 'date' column from string to proper DATE format
 SELECT `date`
 FROM layoffs_staging2;
 
 UPDATE layoffs_staging2
 SET `date` = STR_TO_DATE(`date`, '%m/%d/%Y');
 
+-- Change the column type to DATE for accurate date operations
 ALTER TABLE layoffs_staging2
 MODIFY COLUMN `date` DATE;
 
@@ -119,6 +130,7 @@ SELECT *
 FROM layoffs_staging2
 WHERE company = 'Airbnb';
 
+-- Auto-fill missing industry values by joining on same company name
 SELECT t1.industry, t2.industry
 FROM layoffs_staging2 t1
 JOIN layoffs_staging2 t2
@@ -133,6 +145,8 @@ SET t1.industry = t2.industry
 WHERE t1.industry IS NULL
 AND t2.industry IS NOT NULL; 
 
+-- Identify rows where both key values are NULL (likely garbage)
+-- Delete the junk rows
 SELECT *
 FROM layoffs_staging2
 WHERE total_laid_off IS NULL
@@ -144,8 +158,10 @@ WHERE total_laid_off IS NULL
 AND percentage_laid_off IS NULL;
 
 
+-- Final review of cleaned data
 SELECT *
 FROM layoffs_staging2;
 
+-- Drop the helper column used for deduplication
 ALTER TABLE layoffs_staging2
 DROP COLUMN row_num;
