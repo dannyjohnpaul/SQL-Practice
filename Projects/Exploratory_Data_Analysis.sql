@@ -64,5 +64,31 @@ GROUP BY `MONTH`
 ORDER BY 1 ASC
 )
 SELECT `MONTH`, total_off,
-SUM(total_off) OVER(ORDER BY `MONTH`) as rolling_total
+SUM(total_off) OVER(ORDER BY `MONTH`) AS rolling_total
 FROM Rolling_Total;
+
+
+-- Total layoffs per company per year, sorted alphabetically by company
+SELECT company, YEAR(`date`), SUM(total_laid_off)
+FROM layoffs_staging2
+GROUP BY company,  YEAR(`date`)
+ORDER BY company ASC;
+
+-- CTE 1: Aggregate total layoffs by company and year
+WITH Company_Year (company, years, total_laid_off) AS 
+(
+SELECT company, YEAR(`date`), SUM(total_laid_off)
+FROM layoffs_staging2
+GROUP BY company,  YEAR(`date`)
+), 
+-- CTE 2: Rank companies by total layoffs per year using DENSE_RANK
+Company_Year_Rank AS 
+(
+SELECT *, DENSE_RANK() OVER(PARTITION BY years ORDER BY total_laid_off DESC) AS Ranking
+FROM Company_Year
+WHERE years IS NOT NULL
+)
+-- Final output: Top 5 companies with the most layoffs per year
+SELECT *
+FROM Company_Year_Rank
+WHERE Ranking <= 5;
